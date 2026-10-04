@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<title>Arb Finder</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #6b7280; --border: #e3e6eb;
+    --accent: #0f766e; --accent-bg: #e6f4f2; --warn: #b45309; --warn-bg: #fdf3e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #171a21; --text: #e7e9ee; --muted: #9aa1ad; --border: #2a2f3a;
+      --accent: #2dd4bf; --accent-bg: #10302d; --warn: #f59e0b; --warn-bg: #33260f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 32px 0 12px; }
+  .muted { color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
+  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile .k { font-size: 12px; color: var(--muted); }
+  form.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=number] { width: 110px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+                       background: var(--card); color: var(--text); font: inherit; }
+  button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
+           color: #fff; font: inherit; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--accent-bg);
+           color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--border); }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td.num, th.num { text-align: right; }
+  .scroll { overflow-x: auto; }
+  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; margin-top: 16px; }
+  .empty { padding: 24px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Arb Finder</h1>
+      <div class="muted">
+        {% if settings.demo %}Demo data{% else %}{{ settings.bookmakers|length }} NY sportsbooks{% endif %}
+        · last scan {{ last_scan_ago }} · refreshes every 30s
+      </div>
+    </div>
+    <div class="form-row" style="display:flex;gap:8px;flex-wrap:wrap">
+      <form class="inline" method="get" action="/">
+        <label for="bankroll" class="muted">Bankroll $</label>
+        <input id="bankroll" type="number" name="bankroll" min="1" step="1" value="{{ '%.0f'|format(bankroll) }}">
+        <button class="secondary" type="submit">Recalculate</button>
+      </form>
+      {% if configured %}
+      <form method="post" action="/scan"><button type="submit">Scan now</button></form>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if not configured %}
+  <div class="notice">No odds source configured. Set <code>ODDS_API_KEY</code> in <code>.env</code>, or run with <code>DEMO=1</code> to try it with fake odds.</div>
+  {% endif %}
+  {% if last_scan.error %}
+  <div class="notice">Last scan had an error: {{ last_scan.error }}</div>
+  {% endif %}
+
+  <section class="tiles">
+    <div class="tile"><div class="v">{{ live|length }}</div><div class="k">Live arbs</div></div>
+    <div class="tile"><div class="v">{{ stats.total or 0 }}</div><div class="k">Arbs logged</div></div>
+    <div class="tile"><div class="v">{{ '%.2f'|format((stats.avg_margin or 0) * 100) }}%</div><div class="k">Avg margin</div></div>
+    <div class="tile"><div class="v">{% if stats.avg_lifetime_s %}{{ '%.0f'|format(stats.avg_lifetime_s / 60) }}m{% else %}–{% endif %}</div><div class="k">Avg lifetime</div></div>
+    <div class="tile"><div class="v">{{ last_scan.events_scanned or 0 }}</div><div class="k">Events in last scan</div></div>
+    <div class="tile"><div class="v">{% if last_scan.credits_remaining is not none %}{{ '{:,}'.format(last_scan.credits_remaining) }}{% else %}–{% endif %}</div><div class="k">API credits left</div></div>
+  </section>
+
+  <h2>Live opportunities</h2>
+  {% for v in live %}
+  {% set o = v.opp %}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <strong>{{ o.matchup }}</strong>
+        <span class="muted">· {{ o.sport_title }} · {{ o.line }} · {{ v.commence }}</span>
+      </div>
+      <div>
+        <span class="badge {% if v.margin > 0.05 %}warn{% endif %}">{{ '%.2f'|format(v.margin * 100) }}%</span>
+        <span class="muted">seen {{ v.first_seen }}</span>
+      </div>
+    </div>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Bet</th><th>Book</th><th class="num">Odds</th><th class="num">Stake</th><th class="num">Payout</th></tr></thead>
+      <tbody>
+      {% for x in v.legs %}
+        <tr>
+          <td>{{ x.leg.label }}</td>
+          <td>{{ x.leg.book_title }}</td>
+          <td class="num">{{ '%+d'|format(x.american) }} <span class="muted">({{ '%.2f'|format(x.leg.price) }})</span></td>
+          <td class="num">${{ '{:,.0f}'.format(x.stake) }}</td>
+          <td class="num">${{ '{:,.2f}'.format(x.payout) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="muted" style="margin-top:8px">
+      Total staked ${{ '{:,.0f}'.format(v.plan.total) }} · guaranteed profit
+      <strong style="color:var(--accent)">${{ '{:,.2f}'.format(v.plan.min_profit) }}</strong>
+      {% if v.margin > 0.05 %} · high margin: check both lines are still up and the rules match before betting{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card empty">No live arbs right now. They're rare and short-lived, so leave this running.</div>
+  {% endfor %}
+
+  <h2>Recently closed</h2>
+  {% if past %}
+  <div class="card scroll">
+    <table>
+      <thead><tr><th>Game</th><th>Line</th><th>Books</th><th class="num">Best margin</th><th class="num">Last seen</th></tr></thead>
+      <tbody>
+      {% for v in past %}
+        <tr>
+          <td>{{ v.opp.matchup }} <span class="muted">· {{ v.opp.sport_title }}</span></td>
+          <td>{{ v.opp.line }}</td>
+          <td>{{ v.opp.legs|map(attribute='book_title')|join(' / ') }}</td>
+          <td class="num">{{ '%.2f'|format(v.best_margin * 100) }}%</td>
+          <td class="num">{{ v.last_seen }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card empty">Nothing yet.</div>
+  {% endif %}
+</main>
+</body>
+</html>
