@@ -142,3 +142,36 @@ def test_db_tracks_lifetime_and_closes_vanished_arbs(tmp_path):
     assert db.active(conn) == []
     assert len(db.history(conn)) == 1
     assert db.stats(conn)["total"] == 1
+
+
+# --- exchanges ----------------------------------------------------------
+
+def test_fee_adjusted_price():
+    from arb.stakes import fee_adjusted_price
+
+    # 50c contract: fee 0.07 * 0.5 * 0.5 = 1.75c, so all-in 51.75c.
+    assert fee_adjusted_price(2.0, 0.07) == pytest.approx(1 / 0.5175)
+    assert fee_adjusted_price(2.0, 0.0) == pytest.approx(2.0)
+
+
+def test_exchange_fees_can_erase_an_apparent_arb():
+    # Listed prices arb by ~0.5%, but Kalshi's fee eats it.
+    e = event(
+        book("kalshi", {"h2h": [{"name": "Giants", "price": 2.04}, {"name": "Cowboys", "price": 1.90}]}),
+        book("fanduel", {"h2h": [{"name": "Giants", "price": 1.85}, {"name": "Cowboys", "price": 1.98}]}),
+    )
+    assert find_arbs(e, now=NOW) != []
+    assert find_arbs(e, now=NOW, fees={"kalshi": 0.07}) == []
+
+
+def test_exchange_leg_carries_contract_details():
+    e = event(
+        book("polymarket", {"h2h": [{"name": "Giants", "price": 2.5}, {"name": "Cowboys", "price": 1.6}]}),
+        book("draftkings", {"h2h": [{"name": "Giants", "price": 1.6}, {"name": "Cowboys", "price": 1.85}]}),
+    )
+    [opp] = find_arbs(e, now=NOW, fees={"polymarket": 0.0695})
+    leg = next(l for l in opp.legs if l.book == "polymarket")
+    assert leg.is_exchange and leg.raw_price == 2.5
+    assert leg.contract_cents == pytest.approx(40)
+    assert leg.price < 2.5
+    assert leg.contracts_for(100) == int(100 * leg.price)

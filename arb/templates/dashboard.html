@@ -54,7 +54,7 @@
     <div>
       <h1>Arb Finder</h1>
       <div class="muted">
-        {% if settings.demo %}Demo data{% else %}{{ settings.bookmakers|length }} NY sportsbooks{% endif %}
+        {% if settings.demo %}Demo data{% else %}{{ settings.bookmakers|length }} NY sportsbooks{% if settings.exchanges %} + {{ settings.exchanges|map('title')|join(', ') }}{% endif %}{% endif %}
         · last scan {{ last_scan_ago }} · refreshes every 30s
       </div>
     </div>
@@ -107,9 +107,9 @@
       {% for x in v.legs %}
         <tr>
           <td>{{ x.leg.label }}</td>
-          <td>{{ x.leg.book_title }}</td>
+          <td>{{ x.leg.book_title }}{% if x.leg.is_exchange %} <span class="muted">· buy Yes at {{ '%.0f'|format(x.leg.contract_cents) }}¢</span>{% endif %}</td>
           <td class="num">{{ '%+d'|format(x.american) }} <span class="muted">({{ '%.2f'|format(x.leg.price) }})</span></td>
-          <td class="num">${{ '{:,.0f}'.format(x.stake) }}</td>
+          <td class="num">${{ '{:,.0f}'.format(x.stake) }}{% if x.leg.is_exchange %}<br><span class="muted">{{ x.leg.contracts_for(x.stake) }} contracts</span>{% endif %}</td>
           <td class="num">${{ '{:,.2f}'.format(x.payout) }}</td>
         </tr>
       {% endfor %}
@@ -119,6 +119,7 @@
     <div class="muted" style="margin-top:8px">
       Total staked ${{ '{:,.0f}'.format(v.plan.total) }} · guaranteed profit
       <strong style="color:var(--accent)">${{ '{:,.2f}'.format(v.plan.min_profit) }}</strong>
+      {% if v.legs|selectattr('leg.is_exchange')|list %} · exchange odds include taker fees; check the order book has enough depth for your size{% endif %}
       {% if v.margin > 0.05 %} · high margin: check both lines are still up and the rules match before betting{% endif %}
     </div>
   </div>

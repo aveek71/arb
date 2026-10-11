@@ -21,6 +21,18 @@ def decimal_to_american(decimal: float) -> int:
     return round(-100 / (decimal - 1))
 
 
+def fee_adjusted_price(decimal: float, fee_coef: float) -> float:
+    """Effective decimal odds for an exchange contract after the taker fee.
+
+    A contract priced at p dollars (p = 1/decimal) pays $1. Kalshi and
+    Polymarket US charge coef * p * (1 - p) per contract on top, so the
+    all-in cost is p + fee and the effective odds are 1 / (p + fee).
+    Ignores the per-order rounding to the cent, which matters only for tiny orders.
+    """
+    p = 1 / decimal
+    return 1 / (p + fee_coef * p * (1 - p))
+
+
 def implied_sum(prices: list[float]) -> float:
     """Sum of 1/odds. Below 1.0 means an arbitrage exists."""
     return sum(1 / p for p in prices)

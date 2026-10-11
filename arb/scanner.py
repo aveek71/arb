@@ -37,7 +37,7 @@ def run_scan(settings: Settings, conn: sqlite3.Connection, client: OddsClient | 
             sports = _sports_to_scan(client, settings)
             for sport in sports:
                 try:
-                    events.extend(client.odds(sport, markets=settings.markets, bookmakers=settings.bookmakers))
+                    events.extend(client.odds(sport, markets=settings.markets, bookmakers=settings.sources))
                 except Exception as exc:  # one bad sport shouldn't kill the sweep
                     log.warning("odds fetch failed for %s: %s", sport, exc)
                     error = f"{sport}: {exc}"
@@ -50,6 +50,7 @@ def run_scan(settings: Settings, conn: sqlite3.Connection, client: OddsClient | 
         max_margin=settings.max_margin,
         min_margin=settings.min_margin,
         max_odds_age=settings.max_odds_age_seconds,
+        fees=settings.exchange_fees,
     )
     db.record_scan(conn, opps, scanned_event_ids={e["id"] for e in events})
     quota = client.quota if client else None

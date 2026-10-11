@@ -12,7 +12,12 @@ BOOKS = [
     ("williamhill_us", "Caesars"),
     ("betrivers", "BetRivers"),
     ("fanatics", "Fanatics"),
+    ("kalshi", "Kalshi"),
+    ("polymarket", "Polymarket"),
 ]
+
+# Exchanges only list moneyline-style "who wins" contracts in the demo.
+EXCHANGE_KEYS = {"kalshi", "polymarket"}
 
 TOTALS = {"americanfootball_nfl": 44.5, "basketball_nba": 221.5, "icehockey_nhl": 6.5, "baseball_mlb": 8.5}
 
@@ -52,7 +57,11 @@ def events(seed: int | None = None) -> list[dict]:
                 "last_update": stamp,
                 "outcomes": [{"name": n, "price": _price(p, vig, rng)} for n, p in h2h],
             }]
-            if not three_way:
+            if key in EXCHANGE_KEYS:
+                # Exchanges run thinner margins than books, which is what makes them useful here.
+                vig = rng.uniform(0.0, 0.02)
+                markets[0]["outcomes"] = [{"name": n, "price": _price(p, vig, rng)} for n, p in h2h]
+            elif not three_way:
                 spread = -3.5 if p_home > 0.5 else 3.5
                 markets.append({
                     "key": "spreads",

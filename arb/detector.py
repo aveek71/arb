@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from .stakes import implied_sum
+from .stakes import fee_adjusted_price, implied_sum
 
 
 @dataclass
@@ -16,7 +16,21 @@ class Leg:
     point: float | None
     book: str
     book_title: str
-    price: float
+    price: float  # effective decimal odds, after any exchange fee
+    raw_price: float | None = None  # listed decimal odds before fees (exchanges only)
+
+    @property
+    def is_exchange(self) -> bool:
+        return self.raw_price is not None
+
+    @property
+    def contract_cents(self) -> float | None:
+        """Exchange contract price in cents, before fees."""
+        return 100 / self.raw_price if self.raw_price else None
+
+    def contracts_for(self, stake: float) -> int:
+        """Whole $1-payout contracts a stake buys, fees included."""
+        return int(stake * self.price + 1e-9)
 
     @property
     def label(self) -> str:
@@ -80,6 +94,7 @@ def find_arbs(
     min_margin: float = 0.0,
     max_odds_age: int | None = None,
     now: datetime | None = None,
+    fees: dict[str, float] | None = None,
 ) -> list[Opportunity]:
     """Return every market/line in `event` where the best prices across books arb."""
     now = now or datetime.now(timezone.utc)
@@ -89,6 +104,7 @@ def find_arbs(
         return []
 
     home = event.get("home_team", "")
+    fees = fees or {}
     # market -> line key -> outcome slot -> candidate legs
     groups: dict[str, dict[Any, dict[Any, list[Leg]]]] = {}
 
@@ -104,7 +120,15 @@ def find_arbs(
                 line_key = tuple(sorted(o["name"] for o in outcomes))
             for o in outcomes:
                 point = o.get("point")
-                leg = Leg(o["name"], point, book["key"], book.get("title", book["key"]), float(o["price"]))
+                listed = float(o["price"])
+                if listed <= 1:
+                    continue
+                coef = fees.get(book["key"])
+                leg = Leg(
+                    o["name"], point, book["key"], book.get("title", book["key"]),
+                    price=fee_adjusted_price(listed, coef) if coef is not None else listed,
+                    raw_price=listed if coef is not None else None,
+                )
                 if mkey == "h2h":
                     slot = o["name"]
                 elif mkey == "spreads" and point is not None:
