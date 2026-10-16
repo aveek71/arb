@@ -4,8 +4,10 @@ Finds sports betting arbitrage across New York–licensed sportsbooks and the Ka
 
 ## Quick start
 
+Needs Python 3.11 or newer (macOS's built-in `python3` is 3.9 and won't work; on a Mac run `brew install python@3.12`).
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env          # add your ODDS_API_KEY, or set DEMO=1
 arb-web                       # http://127.0.0.1:8000
